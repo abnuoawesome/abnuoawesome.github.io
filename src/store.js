@@ -7,7 +7,7 @@
     written by Jens Mönig
     jens@moenig.org
 
-    Copyright (C) 2019 by Jens Mönig
+    Copyright (C) 2021 by Jens Mönig
 
     This file is part of Snap!.
 
@@ -61,7 +61,7 @@ normalizeCanvas, contains*/
 
 // Global stuff ////////////////////////////////////////////////////////
 
-modules.store = '2020-July-08';
+modules.store = '2021-March-09';
 
 
 // XML_Serializer ///////////////////////////////////////////////////////
@@ -709,6 +709,7 @@ SnapSerializer.prototype.loadSprites = function (xmlString, ide) {
         sprite.gotoXY(+model.attributes.x || 0, +model.attributes.y || 0);
         this.loadObject(sprite, model);
         sprite.fixLayout();
+        sprite.pauseGenericHatBlocks();
     });
 
     // restore inheritance and nesting associations
@@ -746,6 +747,7 @@ SnapSerializer.prototype.loadSprites = function (xmlString, ide) {
     ide.stage.rerender();
     ide.createCorral();
     ide.fixLayout();
+    ide.toggleAppMode(ide.isAppMode);
 };
 
 SnapSerializer.prototype.loadMedia = function (xmlString) {
@@ -1251,7 +1253,7 @@ SnapSerializer.prototype.obsoleteBlock = function (isReporter) {
             : new CommandBlockMorph();
     block.selector = 'errorObsolete';
     block.color = new Color(200, 0, 20);
-    block.setSpec('Obsolete!');
+    block.setSpec('Undefined!');
     block.isDraggable = true;
     return block;
 };
@@ -1582,8 +1584,9 @@ SnapSerializer.prototype.loadValue = function (model, object) {
         return v;
     case 'sound':
         audio = new Audio();
-        audio.src = model.attributes.sound;
         v = new Sound(audio, model.attributes.name);
+        audio.oncanplaythrough = () => v.loaded = true;
+        audio.src = model.attributes.sound;
         if (Object.prototype.hasOwnProperty.call(
                 model.attributes,
                 'mediaID'
@@ -1649,6 +1652,7 @@ SnapSerializer.prototype.openProject = function (project, ide) {
         ide.hasChangedMedia = true;
     }
     project.stage.fixLayout();
+    project.stage.pauseGenericHatBlocks();
     ide.createCorral();
     ide.selectSprite(sprite);
     ide.fixLayout();
@@ -2225,7 +2229,7 @@ ColorSlotMorph.prototype.toXML = function (serializer) {
 List.prototype.toXML = function (serializer, mediaContext) {
     // mediaContext is an optional name-stub
     // when collecting media into a separate module
-    var xml, value, item;
+    var xml, value;
 
     if (this.hasOnlyAtomicData() &&
             (!this.isLinked || !StageMorph.prototype.enableSublistIDs)) {
@@ -2239,9 +2243,9 @@ List.prototype.toXML = function (serializer, mediaContext) {
     }
 
     if (this.isLinked) {
-        xml = '<list linked="linked" ~>';
         if (StageMorph.prototype.enableSublistIDs) {
             // recursively nest tails:
+            xml = '<list linked="linked" ~>';
             value = this.first;
             if (!isNil(value)) {
                 xml += serializer.format(
@@ -2259,24 +2263,21 @@ List.prototype.toXML = function (serializer, mediaContext) {
             }
             return xml + '</list>';
         }
-        // else sequentially serialize tails:
-        item = this;
-        do {
-            value = item.first;
-            if (!isNil(value)) {
-                xml += serializer.format(
+        // else shallow copy as array and mark as linked:
+        return serializer.format(
+            '<list linked="linked" ~>%</list>',
+            this.itemsArray().reduce((xml, item) => {
+                return xml + serializer.format(
                     '<item>%</item>',
-                    typeof value === 'object' ?
-                            (isSnapObject(value) ? ''
-                                    : serializer.store(value, mediaContext))
-                            : typeof value === 'boolean' ?
-                                    serializer.format('<bool>$</bool>', value)
-                                    : serializer.format('<l>$</l>', value)
+                    typeof item === 'object' ?
+                            (isSnapObject(item) ? ''
+                                    : serializer.store(item, mediaContext))
+                            : typeof item === 'boolean' ?
+                                    serializer.format('<bool>$</bool>', item)
+                                    : serializer.format('<l>$</l>', item)
                 );
-            }
-            item = item.rest;
-        } while (!isNil(item));
-        return xml + '</list>';
+            }, '')
+        );
     }
     // dynamic array:
     return serializer.format(
